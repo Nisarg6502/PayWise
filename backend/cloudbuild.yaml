@@ -1,0 +1,40 @@
+# Cloud Build config for paywise-backend. Triggered on push to main
+# (path-filtered to backend/**) — builds the Docker image, pushes it to
+# Artifact Registry, and deploys it to the existing Cloud Run service.
+#
+# Env vars / secrets are NOT set here — they were configured once via
+# `gcloud run deploy` / `gcloud run services update` and persist across
+# revisions. This build only ships new code.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - us-central1-docker.pkg.dev/$PROJECT_ID/paywise/paywise-backend:$SHORT_SHA
+      - -t
+      - us-central1-docker.pkg.dev/$PROJECT_ID/paywise/paywise-backend:latest
+      - .
+    dir: backend
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - us-central1-docker.pkg.dev/$PROJECT_ID/paywise/paywise-backend
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - paywise-backend
+      - --image=us-central1-docker.pkg.dev/$PROJECT_ID/paywise/paywise-backend:$SHORT_SHA
+      - --region=us-central1
+      - --project=$PROJECT_ID
+
+images:
+  - us-central1-docker.pkg.dev/$PROJECT_ID/paywise/paywise-backend:$SHORT_SHA
+  - us-central1-docker.pkg.dev/$PROJECT_ID/paywise/paywise-backend:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY

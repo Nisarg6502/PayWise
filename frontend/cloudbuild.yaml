@@ -1,0 +1,36 @@
+# Cloud Build config for paywise-frontend. Triggered on push to main
+# (path-filtered to frontend/**). NEXT_PUBLIC_API_URL is hardcoded directly
+# in frontend/Dockerfile (see comment there for why) — no build-arg needed.
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - us-central1-docker.pkg.dev/$PROJECT_ID/paywise/paywise-frontend:$SHORT_SHA
+      - -t
+      - us-central1-docker.pkg.dev/$PROJECT_ID/paywise/paywise-frontend:latest
+      - .
+    dir: frontend
+
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - --all-tags
+      - us-central1-docker.pkg.dev/$PROJECT_ID/paywise/paywise-frontend
+
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - paywise-frontend
+      - --image=us-central1-docker.pkg.dev/$PROJECT_ID/paywise/paywise-frontend:$SHORT_SHA
+      - --region=us-central1
+      - --project=$PROJECT_ID
+
+images:
+  - us-central1-docker.pkg.dev/$PROJECT_ID/paywise/paywise-frontend:$SHORT_SHA
+  - us-central1-docker.pkg.dev/$PROJECT_ID/paywise/paywise-frontend:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
