@@ -1,3 +1,8 @@
+# Production requirements for the Cloud Run image.
+# Same as requirements.txt but without `unstructured[md,pdf]` (heavy native deps for
+# PDF/DOCX parsing) — matches current local dev behavior where non-.md/.txt rule
+# uploads return a 400 telling the user to paste text or use .md/.txt instead.
+
 # --- Web framework ---
 fastapi>=0.115
 uvicorn[standard]>=0.30
@@ -34,10 +39,6 @@ langfuse>=2.50,<3.0          # LangGraph/LangChain CallbackHandler tracing
 
 # --- Embeddings + reranker ---
 # Default providers are the Jina AI APIs (JINA_API_KEY) — nothing to install.
-# Only needed if EMBEDDING_PROVIDER/RERANKER_PROVIDER are set to "local":
-# sentence-transformers>=3.0  # nomic-embed-text-v1.5 + bge-reranker-v2-m3
-# einops>=0.8                 # required by nomic-embed-text's remote code
 
 # --- Document parsing / ingestion ---
-unstructured[md,pdf]>=0.15
 langchain-text-splitters>=0.3

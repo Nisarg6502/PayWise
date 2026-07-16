@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24 * 7  # 7 days
 
+    # --- Observability (Langfuse) ---
+    # Leave unset to run with tracing disabled (e.g. local dev without a Langfuse account).
+    langfuse_secret_key: str | None = None
+    langfuse_public_key: str | None = None
+    langfuse_host: str = "https://cloud.langfuse.com"
+
     @property
     def database_url(self) -> str:
         if self.database_url_override:

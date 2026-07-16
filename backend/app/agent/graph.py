@@ -20,6 +20,19 @@ from app.services.ollama_client import chat
 from app.services.qdrant import get_qdrant, owned_cards_filter
 from app.services.reranker import rerank
 
+from langfuse.decorators import langfuse_context, observe
+
+# Explicit config (rather than relying on ambient LANGFUSE_* env vars) so this
+# works the same whether keys come from a local .env or Cloud Run secrets.
+# `enabled=False` when keys are missing makes @observe a no-op — safe for local
+# dev without a Langfuse account.
+langfuse_context.configure(
+    public_key=settings.langfuse_public_key,
+    secret_key=settings.langfuse_secret_key,
+    host=settings.langfuse_host,
+    enabled=bool(settings.langfuse_secret_key and settings.langfuse_public_key),
+)
+
 RETRIEVAL_LIMIT = 10  # dense candidates fetched before reranking
 RERANK_TOP_K = 3
 
@@ -44,6 +57,7 @@ Respond with ONLY a JSON object, no prose, in this exact shape:
 {"merchant": "<merchant or spend category, lowercase>", "amount": <number, 0 if not stated>}"""
 
 
+@observe(name="extract_intent")
 def node_extract_intent(state: AgentState) -> dict:
     """Call Qwen3 to extract the merchant and the spend amount from the query."""
     raw = chat(system=INTENT_SYSTEM_PROMPT, user=state["query"])
@@ -61,6 +75,7 @@ def node_extract_intent(state: AgentState) -> dict:
     return {"extracted_merchant": merchant, "extracted_amount": amount}
 
 
+@observe(name="retrieve_rules")
 def node_retrieve_rules(state: AgentState) -> dict:
     """Dense retrieval from Qdrant, strictly filtered to the user's owned cards."""
     if not state["owned_card_ids"]:
@@ -91,6 +106,7 @@ def node_retrieve_rules(state: AgentState) -> dict:
     return {"retrieved_rules": rules}
 
 
+@observe(name="rerank")
 def node_rerank(state: AgentState) -> dict:
     """Rerank retrieved chunks with bge-reranker-v2-m3; keep the top 3."""
     top_chunks = rerank(state["query"], state["retrieved_rules"], top_k=RERANK_TOP_K)
@@ -104,6 +120,7 @@ _MULTIPLIER_RE = re.compile(r"(\d+(?:\.\d+)?)\s*[xX]\s*(?:points|rewards)?")
 _BASE_POINT_VALUE = 0.01  # assumed value per point-multiple; tune per program
 
 
+@observe(name="calculate_math")
 def node_calculate_math(state: AgentState) -> dict:
     """Pure deterministic reward calculation — no LLM involvement.
 
@@ -144,6 +161,7 @@ justification quoting the relevant rule. Do not invent rates that are not in the
 If the yields are empty, say you could not find an applicable reward rule."""
 
 
+@observe(name="generate_response")
 def node_generate_response(state: AgentState) -> dict:
     """Call Qwen3 to turn the deterministic math into human-readable advice."""
     context = json.dumps(
@@ -183,3 +201,17 @@ def build_graph():
 
 
 agent_graph = build_graph()
+
+
+@observe(name="chat_pipeline")
+def run_agent(state: AgentState, user_id: str) -> AgentState:
+    """Invoke the graph as one Langfuse trace containing all 5 node spans."""
+    langfuse_context.update_current_trace(user_id=user_id, input=state["query"])
+    return agent_graph.invoke(state)
+
+
+@observe(name="chat_pipeline_stream")
+def stream_agent(state: AgentState, user_id: str):
+    """Stream node updates as one Langfuse trace containing all 5 node spans."""
+    langfuse_context.update_current_trace(user_id=user_id, input=state["query"])
+    yield from agent_graph.stream(state, stream_mode="updates")

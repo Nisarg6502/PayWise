@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from sse_starlette.sse import EventSourceResponse
 
-from app.agent.graph import AgentState, agent_graph
+from app.agent.graph import AgentState, run_agent, stream_agent
 from app.auth.dependencies import get_current_user
 from app.db.session import get_db
 from app.models import User, UserCardMapping
@@ -50,7 +50,7 @@ def chat(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    state = agent_graph.invoke(_initial_state(body.query, current_user, db))
+    state = run_agent(_initial_state(body.query, current_user, db), user_id=str(current_user.id))
     return {
         "merchant": state["extracted_merchant"],
         "amount": state["extracted_amount"],
@@ -69,7 +69,7 @@ async def chat_stream(
 
     def event_generator():
         # stream_mode="updates" yields {node_name: state_delta} per node
-        for update in agent_graph.stream(initial, stream_mode="updates"):
+        for update in stream_agent(initial, user_id=str(current_user.id)):
             for node_name, delta in update.items():
                 yield {
                     "event": "node",
