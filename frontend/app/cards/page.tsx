@@ -42,6 +42,7 @@ export default function CardsPage() {
   const [rulesError, setRulesError] = useState("");
   const [rulesSaving, setRulesSaving] = useState(false);
   const [rulesSavedCount, setRulesSavedCount] = useState<number | null>(null);
+  const [dragActive, setDragActive] = useState(false);
 
   const load = useCallback(async () => {
     const [cat, mine] = await Promise.all([
@@ -421,7 +422,7 @@ export default function CardsPage() {
                   {rulesSavedCount === null ? (
                     <>
                       <div style={{ fontSize: 13.5, color: "var(--muted)", lineHeight: 1.5 }}>
-                        Paste the card&apos;s reward terms (cashback %, categories, caps) from the bank&apos;s T&amp;C page, or upload a <code>.md</code>/<code>.txt</code> file. We chunk and embed it so the optimizer can find it later.
+                        Paste the card&apos;s reward terms (cashback %, categories, caps) from the bank&apos;s T&amp;C page, or upload a PDF, DOCX, MD, or TXT file. We chunk and embed it so the optimizer can find it later.
                       </div>
                       <textarea
                         value={rulesText}
@@ -435,12 +436,59 @@ export default function CardsPage() {
                         <span style={{ fontSize: 12, color: "var(--faint)" }}>or</span>
                         <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
                       </div>
-                      <input
-                        type="file"
-                        accept=".md,.markdown,.txt,.pdf,.docx"
-                        onChange={(e) => { const f = e.target.files?.[0] ?? null; setRulesFile(f); if (f) setRulesText(""); }}
-                        style={{ fontSize: 13, color: "var(--muted)" }}
-                      />
+                      <label
+                        onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+                        onDragLeave={() => setDragActive(false)}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setDragActive(false);
+                          const f = e.dataTransfer.files?.[0] ?? null;
+                          if (f) { setRulesFile(f); setRulesText(""); }
+                        }}
+                        style={{
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 6,
+                          padding: "22px 16px",
+                          borderRadius: "var(--r-md)",
+                          border: `1.5px dashed ${dragActive ? "var(--accent)" : "var(--border-2)"}`,
+                          background: dragActive ? "rgba(109, 124, 255, .08)" : "var(--surface-2)",
+                          cursor: "pointer",
+                          transition: `border-color var(--dur) var(--ease), background var(--dur) var(--ease)`,
+                          textAlign: "center",
+                          position: "relative",
+                        }}
+                      >
+                        <input
+                          type="file"
+                          accept=".md,.markdown,.txt,.pdf,.docx"
+                          onChange={(e) => { const f = e.target.files?.[0] ?? null; setRulesFile(f); if (f) setRulesText(""); }}
+                          style={{ position: "absolute", width: 1, height: 1, opacity: 0, pointerEvents: "none" }}
+                        />
+                        {rulesFile ? (
+                          <>
+                            <div style={{ fontSize: 22 }}>📄</div>
+                            <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--text)" }}>{rulesFile.name}</div>
+                            <button
+                              type="button"
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setRulesFile(null); }}
+                              style={{ fontSize: 12, color: "var(--danger)", background: "none", border: "none", cursor: "pointer", padding: "2px 6px" }}
+                            >
+                              ✕ Remove
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <div style={{ fontSize: 22 }}>⬆</div>
+                            <div style={{ fontSize: 13.5, color: "var(--text)" }}>
+                              <strong>Click to upload</strong> or drag and drop
+                            </div>
+                            <div style={{ fontSize: 12, color: "var(--faint)" }}>PDF, DOCX, MD, or TXT</div>
+                          </>
+                        )}
+                      </label>
                       {rulesError && <div style={{ fontSize: 13, color: "var(--danger)" }}>{rulesError}</div>}
                       <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
                         <button className="chip-btn" onClick={finishRules}>Skip for now</button>

@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.auth.dependencies import get_current_user
 from app.core.config import settings
 from app.db.session import get_db
-from app.ingestion.ingest import ingest_text
+from app.ingestion.ingest import docx_to_text, ingest_text, pdf_to_text
 from app.models import CreditCard, User, UserCardMapping
 from app.services.qdrant import get_qdrant
 
@@ -120,8 +120,8 @@ async def add_rules(
 ) -> dict:
     """Ingest reward-rule text (pasted or uploaded) for a card into Qdrant.
 
-    Accepts plain text/Markdown directly. PDF/DOCX uploads need the
-    `unstructured` package installed; without it, only .md/.txt files work.
+    Accepts plain text/Markdown, PDF, or DOCX uploads. PDF extraction is
+    text-based (via pypdf) — scanned/image-only PDFs won't extract any text.
     """
     card = db.get(CreditCard, card_id)
     if card is None:
@@ -132,22 +132,21 @@ async def add_rules(
         raw = await file.read()
         if suffix in TEXT_EXTENSIONS or suffix == "":
             content = raw.decode("utf-8", errors="ignore")
-        else:
-            try:
-                from unstructured.partition.auto import partition
-            except ImportError:
+        elif suffix == ".pdf":
+            content = pdf_to_text(raw)
+            if not content.strip():
                 raise HTTPException(
                     status.HTTP_400_BAD_REQUEST,
-                    f"'{suffix}' files need the 'unstructured' package (not installed). "
-                    "Paste the text instead, or upload a .md/.txt file.",
+                    "Couldn't extract any text from this PDF — it may be a scanned/image-only "
+                    "document. Paste the text instead.",
                 )
-            import tempfile
-
-            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-                tmp.write(raw)
-                tmp_path = tmp.name
-            elements = partition(filename=tmp_path)
-            content = "\n\n".join((el.text or "").strip() for el in elements if (el.text or "").strip())
+        elif suffix == ".docx":
+            content = docx_to_text(raw)
+        else:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                f"Unsupported file type '{suffix}'. Upload .pdf, .docx, .md, or .txt, or paste the text instead.",
+            )
         source_name = file.filename or "uploaded file"
     elif text and text.strip():
         content = text

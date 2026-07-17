@@ -39,5 +39,6 @@ langfuse>=2.50,<3.0          # LangGraph/LangChain CallbackHandler tracing
 # einops>=0.8                 # required by nomic-embed-text's remote code
 
 # --- Document parsing / ingestion ---
-unstructured[md,pdf]>=0.15
+pypdf>=4.0                  # PDF text extraction (text-based PDFs only, no OCR)
+python-docx>=1.1            # DOCX text extraction
 langchain-text-splitters>=0.3
