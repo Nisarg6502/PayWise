@@ -16,6 +16,19 @@ export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
 }
 
+/** Pull FastAPI's `{"detail": "..."}` message out of an apiFetch/apiFetchForm error, if present. */
+export function extractApiErrorDetail(e: unknown): string | null {
+  if (!(e instanceof Error)) return null;
+  const match = e.message.match(/^API \d+: (.*)$/s);
+  if (!match) return null;
+  try {
+    const body = JSON.parse(match[1]);
+    return typeof body.detail === "string" ? body.detail : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function apiFetch<T>(
   path: string,
   options: RequestInit = {}

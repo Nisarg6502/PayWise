@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
 import CardVisual from "@/components/CardVisual";
 import Toast from "@/components/Toast";
-import { apiFetch, apiFetchForm, getToken } from "@/lib/api";
+import { apiFetch, apiFetchForm, extractApiErrorDetail, getToken } from "@/lib/api";
 import { cardBg, networkBadge, seedFromId } from "@/lib/cardTheme";
+import { BANK_CARD_CATALOG } from "@/lib/bankCardCatalog";
 
 interface Card { id: string; bank_name: string; card_name: string; network: string; }
 interface UserInfo { id: string; email: string; name: string; }
@@ -28,12 +29,14 @@ export default function CardsPage() {
   const [bankFilter, setBankFilter] = useState("All");
   const [toast, setToast] = useState("");
 
-  // create-card form
+  // create-card form (guided wizard: bank -> card -> network[if choice] -> review, or manual fallback)
   const [newBank, setNewBank] = useState("");
   const [newCardName, setNewCardName] = useState("");
   const [newNetwork, setNewNetwork] = useState(NETWORKS[0]);
   const [createError, setCreateError] = useState("");
   const [creating, setCreating] = useState(false);
+  const [createStep, setCreateStep] = useState<"bank" | "card" | "network" | "manual" | "review">("bank");
+  const [cardNetworkOptions, setCardNetworkOptions] = useState<string[]>([]);
 
   // rules form
   const [rulesCard, setRulesCard] = useState<Card | null>(null);
@@ -78,7 +81,14 @@ export default function CardsPage() {
     setModalOpen(false);
     setCreateError(""); setRulesError(""); setRulesSavedCount(null);
     setNewBank(""); setNewCardName(""); setNewNetwork(NETWORKS[0]);
+    setCreateStep("bank"); setCardNetworkOptions([]);
     setRulesText(""); setRulesFile(null); setRulesCard(null);
+  }
+
+  function openCreateWizard() {
+    setMode("create"); setCreateError("");
+    setNewBank(""); setNewCardName(""); setNewNetwork(NETWORKS[0]);
+    setCreateStep("bank"); setCardNetworkOptions([]);
   }
 
   async function addCard(c: Card) {
@@ -150,11 +160,7 @@ export default function CardsPage() {
       setRulesSavedCount(res.chunks);
       setRuleCounts((r) => ({ ...r, [rulesCard.id]: (r[rulesCard.id] ?? 0) + res.chunks }));
     } catch (e) {
-      setRulesError(
-        e instanceof Error && e.message.includes("400") && e.message.toLowerCase().includes("unstructured")
-          ? "PDF/DOCX isn't supported yet on this server — paste the text instead, or upload a .md/.txt file."
-          : "Couldn't save those rules — try again."
-      );
+      setRulesError(extractApiErrorDetail(e) ?? "Couldn't save those rules — try again.");
     } finally {
       setRulesSaving(false);
     }
@@ -347,7 +353,7 @@ export default function CardsPage() {
                 </div>
                 <div style={{ padding: "14px 22px", borderTop: "1px solid var(--border)", textAlign: "center" }}>
                   <button
-                    onClick={() => { setMode("create"); setCreateError(""); }}
+                    onClick={openCreateWizard}
                     style={{ background: "none", border: "none", color: "var(--accent)", cursor: "pointer", fontSize: 13.5, fontWeight: 500 }}
                   >
                     Can&apos;t find your card? Add a new one →
@@ -356,55 +362,166 @@ export default function CardsPage() {
               </>
             )}
 
-            {/* ---- CREATE ---- */}
-            {mode === "create" && (
-              <>
-                <div style={{ padding: "20px 22px", borderBottom: "1px solid var(--border)" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div className="num" style={{ fontSize: 18, fontWeight: 600 }}>Add a new card</div>
-                    <button onClick={closeModal} style={{ width: 32, height: 32, borderRadius: 9, background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--muted)", cursor: "pointer", fontSize: 15 }} aria-label="Close">✕</button>
+            {/* ---- CREATE (guided wizard: bank -> card -> network[if choice] -> review) ---- */}
+            {mode === "create" && (() => {
+              const selectFieldStyle = { marginTop: 6, width: "100%", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", padding: "11px 14px", color: "var(--text)", fontSize: 14.5 } as const;
+              const bankEntry = BANK_CARD_CATALOG.find((b) => b.bank === newBank);
+              const stepLabel = {
+                bank: "Step 1 · Select your bank",
+                card: "Step 2 · Select your card",
+                network: "Step 3 · Select the network",
+                review: "Review & confirm",
+                manual: "Enter card details manually",
+              }[createStep];
+
+              return (
+                <>
+                  <div style={{ padding: "20px 22px", borderBottom: "1px solid var(--border)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <div className="num" style={{ fontSize: 18, fontWeight: 600 }}>Add a new card</div>
+                        <div style={{ fontSize: 12.5, color: "var(--faint)", marginTop: 2 }}>{stepLabel}</div>
+                      </div>
+                      <button onClick={closeModal} style={{ width: 32, height: 32, borderRadius: 9, background: "var(--surface-2)", border: "1px solid var(--border)", color: "var(--muted)", cursor: "pointer", fontSize: 15 }} aria-label="Close">✕</button>
+                    </div>
                   </div>
-                </div>
-                <div style={{ padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
-                  <label style={{ fontSize: 13, color: "var(--muted)" }}>
-                    Bank name
-                    <input
-                      value={newBank}
-                      onChange={(e) => setNewBank(e.target.value)}
-                      placeholder="e.g. HDFC Bank"
-                      style={{ marginTop: 6, width: "100%", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", padding: "11px 14px", color: "var(--text)", fontSize: 14.5 }}
-                      autoFocus
-                    />
-                  </label>
-                  <label style={{ fontSize: 13, color: "var(--muted)" }}>
-                    Card name
-                    <input
-                      value={newCardName}
-                      onChange={(e) => setNewCardName(e.target.value)}
-                      placeholder="e.g. Regalia Gold"
-                      style={{ marginTop: 6, width: "100%", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", padding: "11px 14px", color: "var(--text)", fontSize: 14.5 }}
-                    />
-                  </label>
-                  <label style={{ fontSize: 13, color: "var(--muted)" }}>
-                    Network
-                    <select
-                      value={newNetwork}
-                      onChange={(e) => setNewNetwork(e.target.value)}
-                      style={{ marginTop: 6, width: "100%", background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", padding: "11px 14px", color: "var(--text)", fontSize: 14.5 }}
-                    >
-                      {NETWORKS.map((n) => <option key={n} value={n}>{n}</option>)}
-                    </select>
-                  </label>
-                  {createError && <div style={{ fontSize: 13, color: "var(--danger)" }}>{createError}</div>}
-                  <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
-                    <button className="chip-btn" onClick={() => setMode("browse")}>← Back</button>
-                    <button className="btn-primary" style={{ flex: 1 }} onClick={createCard} disabled={creating}>
-                      {creating ? <span className="spinner" /> : "Create & continue"}
-                    </button>
+                  <div style={{ padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
+
+                    {createStep === "bank" && (
+                      <label style={{ fontSize: 13, color: "var(--muted)" }}>
+                        Bank
+                        <select
+                          value=""
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            if (v === "__other__") { setNewBank(""); setCreateStep("manual"); return; }
+                            setNewBank(v); setNewCardName(""); setCreateStep("card");
+                          }}
+                          style={selectFieldStyle}
+                          autoFocus
+                        >
+                          <option value="" disabled>Select a bank…</option>
+                          {BANK_CARD_CATALOG.map((b) => <option key={b.bank} value={b.bank}>{b.bank}</option>)}
+                          <option value="__other__">My bank isn&apos;t listed…</option>
+                        </select>
+                      </label>
+                    )}
+
+                    {createStep === "card" && bankEntry && (
+                      <>
+                        <div style={{ fontSize: 13, color: "var(--muted)" }}>{newBank}</div>
+                        <label style={{ fontSize: 13, color: "var(--muted)" }}>
+                          Card
+                          <select
+                            value=""
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (v === "__other__") { setNewCardName(""); setCreateStep("manual"); return; }
+                              const card = bankEntry.cards.find((c) => c.name === v);
+                              const networks = card?.networks ?? NETWORKS;
+                              setNewCardName(v);
+                              if (networks.length <= 1) {
+                                setNewNetwork(networks[0] ?? NETWORKS[0]);
+                                setCreateStep("review");
+                              } else {
+                                setCardNetworkOptions(networks);
+                                setNewNetwork(networks[0]);
+                                setCreateStep("network");
+                              }
+                            }}
+                            style={selectFieldStyle}
+                            autoFocus
+                          >
+                            <option value="" disabled>Select a card…</option>
+                            {bankEntry.cards.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+                            <option value="__other__">My card isn&apos;t listed…</option>
+                          </select>
+                        </label>
+                        <button className="chip-btn" onClick={() => setCreateStep("bank")}>← Back</button>
+                      </>
+                    )}
+
+                    {createStep === "network" && (
+                      <>
+                        <div style={{ fontSize: 13, color: "var(--muted)" }}>{newBank} · {newCardName}</div>
+                        <label style={{ fontSize: 13, color: "var(--muted)" }}>
+                          Network
+                          <select
+                            value={newNetwork}
+                            onChange={(e) => setNewNetwork(e.target.value)}
+                            style={selectFieldStyle}
+                          >
+                            {cardNetworkOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+                          </select>
+                        </label>
+                        <div style={{ display: "flex", gap: 10 }}>
+                          <button className="chip-btn" onClick={() => setCreateStep("card")}>← Back</button>
+                          <button className="btn-primary" style={{ flex: 1 }} onClick={() => setCreateStep("review")}>Continue</button>
+                        </div>
+                      </>
+                    )}
+
+                    {createStep === "review" && (
+                      <>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10, background: "var(--surface-2)", border: "1px solid var(--border)", borderRadius: "var(--r-md)", padding: "14px 16px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}><span style={{ color: "var(--faint)" }}>Bank</span><span>{newBank}</span></div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}><span style={{ color: "var(--faint)" }}>Card</span><span>{newCardName}</span></div>
+                          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}><span style={{ color: "var(--faint)" }}>Network</span><span>{newNetwork}</span></div>
+                        </div>
+                        {createError && <div style={{ fontSize: 13, color: "var(--danger)" }}>{createError}</div>}
+                        <div style={{ display: "flex", gap: 10 }}>
+                          <button className="chip-btn" onClick={() => setCreateStep(cardNetworkOptions.length > 1 ? "network" : "card")}>← Back</button>
+                          <button className="btn-primary" style={{ flex: 1 }} onClick={createCard} disabled={creating}>
+                            {creating ? <span className="spinner" /> : "Create & continue"}
+                          </button>
+                        </div>
+                      </>
+                    )}
+
+                    {createStep === "manual" && (
+                      <>
+                        <label style={{ fontSize: 13, color: "var(--muted)" }}>
+                          Bank name
+                          <input
+                            value={newBank}
+                            onChange={(e) => setNewBank(e.target.value)}
+                            placeholder="e.g. HDFC Bank"
+                            style={selectFieldStyle}
+                            autoFocus
+                          />
+                        </label>
+                        <label style={{ fontSize: 13, color: "var(--muted)" }}>
+                          Card name
+                          <input
+                            value={newCardName}
+                            onChange={(e) => setNewCardName(e.target.value)}
+                            placeholder="e.g. Regalia Gold"
+                            style={selectFieldStyle}
+                          />
+                        </label>
+                        <label style={{ fontSize: 13, color: "var(--muted)" }}>
+                          Network
+                          <select
+                            value={newNetwork}
+                            onChange={(e) => setNewNetwork(e.target.value)}
+                            style={selectFieldStyle}
+                          >
+                            {NETWORKS.map((n) => <option key={n} value={n}>{n}</option>)}
+                          </select>
+                        </label>
+                        {createError && <div style={{ fontSize: 13, color: "var(--danger)" }}>{createError}</div>}
+                        <div style={{ display: "flex", gap: 10 }}>
+                          <button className="chip-btn" onClick={() => setCreateStep("bank")}>← Back</button>
+                          <button className="btn-primary" style={{ flex: 1 }} onClick={createCard} disabled={creating}>
+                            {creating ? <span className="spinner" /> : "Create & continue"}
+                          </button>
+                        </div>
+                      </>
+                    )}
                   </div>
-                </div>
-              </>
-            )}
+                </>
+              );
+            })()}
 
             {/* ---- RULES ---- */}
             {mode === "rules" && rulesCard && (
