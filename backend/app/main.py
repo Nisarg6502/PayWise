@@ -2,6 +2,8 @@
 
 Run locally:
     uvicorn app.main:app --reload --port 8000
+
+# (CI/CD test comment)
 """
 
 import logging
