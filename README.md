@@ -122,3 +122,10 @@ python -m app.ingestion.ingest --file "docs/hdfc_infinia.pdf" \
 - The reranker (bge-reranker-v2-m3, ~2 GB) downloads lazily on the first `/chat` request, not at server startup.
 - `GET /chat/stream` emits one SSE event per completed LangGraph node; the frontend consumes it with `fetch` streaming (EventSource can't send the Authorization header).
 - PWA icons (`frontend/public/icon-192.png`, `icon-512.png`) referenced by the manifest still need to be added.
+
+## CI/CD
+
+Pushes to `main` touching `backend/**` or `frontend/**` trigger a Cloud Build
+pipeline (see `backend/cloudbuild.yaml` / `frontend/cloudbuild.yaml`) that
+builds the Docker image, pushes it to Artifact Registry, and deploys it to
+Cloud Run. No manual `gcloud run deploy` needed for normal changes.
