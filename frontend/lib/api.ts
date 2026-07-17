@@ -19,7 +19,7 @@ export function clearToken(): void {
 /** Pull FastAPI's `{"detail": "..."}` message out of an apiFetch/apiFetchForm error, if present. */
 export function extractApiErrorDetail(e: unknown): string | null {
   if (!(e instanceof Error)) return null;
-  const match = e.message.match(/^API \d+: (.*)$/s);
+  const match = e.message.match(/^API \d+: ([\s\S]*)$/);
   if (!match) return null;
   try {
     const body = JSON.parse(match[1]);
