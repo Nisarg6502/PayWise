@@ -84,6 +84,7 @@ class AgentState(TypedDict):
     qualitative_offers: list[dict]
     citations: list[Citation]
     final_recommendation: str
+    follow_up_questions: list[str]
 
 
 # --------------------------------------------------------------------------
@@ -270,6 +271,10 @@ def node_decline_off_topic(state: AgentState) -> dict:
         "citations": [],
         "calculated_yields": {},
         "qualitative_offers": [],
+        "follow_up_questions": [
+            "What are my HDFC Infinia's benefits?",
+            "How do I maximize rewards across my cards?",
+        ],
     }
 
 
@@ -346,6 +351,19 @@ def node_build_citations(state: AgentState) -> dict:
     return {"citations": citations}
 
 
+_CITATION_CONTRACT = """
+Cite claims with inline markers like [1], [2] matching the 1-indexed position of the
+relevant entry in the provided `citations` list — never spell out section names or
+paragraph numbers in your prose, just the bracketed number, placed right after the
+claim it supports. Only cite entries that actually support what you're saying.
+
+Respond with ONLY a JSON object, no prose outside it, in this exact shape:
+{"answer": "<your answer, 2-4 sentences unless you must synthesize across several
+  cards>", "follow_ups": ["<short natural follow-up question>", "..."]}
+`follow_ups` should have 2-3 short questions the user might reasonably ask next,
+grounded only in what's actually in `citations`/`calculated_yields` — don't invent
+questions about things not covered here."""
+
 GENERATION_SYSTEM_PROMPT_PURCHASE = """You are a credit-card rewards advisor. Using ONLY the
 pre-calculated yields, qualitative offers, and citations provided, recommend which
 owned card the user should use for this purchase.
@@ -357,20 +375,22 @@ owned card the user should use for this purchase.
   straight from the rule text — these are real benefits that just don't reduce to a
   clean percentage rate, do not invent a rate or numeric reward for them.
 - Only say you could not find an applicable reward rule if BOTH are empty.
-- Cite your claims using the section names present in `citations`.
-- Never invent numbers that are not present in the data."""
+- Keep the answer short and direct — this is a quick recommendation, not an essay.
+- Never invent numbers that are not present in the data.
+""" + _CITATION_CONTRACT
 
 GENERATION_SYSTEM_PROMPT_GENERAL = """You are a credit-card rewards advisor answering a
 general question about the user's own credit cards (benefits, point structure,
 redemption, or how to maximize rewards across cards they own). Using ONLY the rule
 excerpts in `citations` and the conversation history for context, answer the user's
-question directly and conversationally.
+question directly and conversationally, as short as the question allows.
 
 - If asked to compare or maximize across cards, synthesize across all provided
-  citations rather than picking one "winner".
-- Cite your claims using the section names present in `citations`.
+  citations rather than picking one "winner" — this is the one case where a longer
+  answer is fine.
 - Do not invent numbers, rates, or benefits not present in the citations.
-- If the citations do not cover the question, say so plainly rather than guessing."""
+- If the citations do not cover the question, say so plainly rather than guessing.
+""" + _CITATION_CONTRACT
 
 
 @observe(name="generate_response")
@@ -379,7 +399,10 @@ def node_generate_response(state: AgentState) -> dict:
 
     The system prompt branches on query_type: the purchase path keeps the
     original winner-recommendation framing, the general path is instructed to
-    synthesize across all citations instead of picking a single winner.
+    synthesize across all citations instead of picking a single winner. Both
+    variants ask for a JSON envelope (answer + follow_ups) parsed the same
+    forgiving way as node_classify_and_extract: on any parse failure, fall back
+    to the raw text as the answer rather than breaking the turn.
     """
     system = (
         GENERATION_SYSTEM_PROMPT_PURCHASE
@@ -398,12 +421,25 @@ def node_generate_response(state: AgentState) -> dict:
         },
         indent=2,
     )
-    answer = chat(
+    raw = chat(
         system=system,
         messages=_history_as_messages(state["history"]) + [{"role": "user", "content": context}],
         temperature=0.3,
     )
-    return {"final_recommendation": answer}
+
+    answer, follow_ups = raw, []
+    match = re.search(r"\{.*\}", raw, re.DOTALL)
+    if match:
+        try:
+            parsed = json.loads(match.group())
+            answer = str(parsed.get("answer", "")).strip() or raw
+            follow_ups = [str(q).strip() for q in parsed.get("follow_ups", []) if str(q).strip()]
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+    # On parse failure, `answer` (set to `raw` above) is the safer fallback —
+    # the user still gets a readable response, just without follow-ups.
+
+    return {"final_recommendation": answer, "follow_up_questions": follow_ups}
 
 
 # --------------------------------------------------------------------------

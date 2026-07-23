@@ -31,3 +31,4 @@ qdrant_storage/
 # Claude Code / session-local
 .claude/
 specs.md
+HANDOFF.md
