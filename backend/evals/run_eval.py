@@ -56,6 +56,7 @@ def run() -> None:
             "extracted_amount": 0.0,
             "retrieved_rules": [],
             "calculated_yields": {},
+            "qualitative_offers": [],
             "final_recommendation": "",
         }
         final = run_agent(state, user_id=f"eval::{case['id']}")

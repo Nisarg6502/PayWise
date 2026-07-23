@@ -45,6 +45,7 @@ class AgentState(TypedDict):
     extracted_amount: float
     retrieved_rules: list[dict]
     calculated_yields: dict
+    qualitative_offers: list[dict]
     final_recommendation: str
 
 
@@ -125,21 +126,35 @@ def node_calculate_math(state: AgentState) -> dict:
     """Pure deterministic reward calculation — no LLM involvement.
 
     For each reranked rule, extract the best advertised rate and compute
-    the yield on the extracted amount.
+    the yield on the extracted amount. Rules that carry no computable
+    percentage/points rate (e.g. flat "Buy One Get One" or Rs-off deals,
+    common in T&C docs) are NOT discarded — they're passed through as
+    qualitative offers so generate_response can still describe them from
+    the actual rule text instead of falsely reporting no match at all.
     """
     amount = state["extracted_amount"]
     yields: dict[str, dict] = {}
+    qualitative: list[dict] = []
 
     for rule in state["retrieved_rules"]:
         rates = [float(p) / 100 for p in _PERCENT_RE.findall(rule["text"])]
         rates += [float(m) * _BASE_POINT_VALUE for m in _MULTIPLIER_RE.findall(rule["text"])]
         # Ignore implausible values (e.g. "36% APR", fee percentages > 25%)
         plausible = [r for r in rates if 0 < r <= 0.25]
+        card_key = f"{rule['bank_name']} {rule['card_name']}".strip() or rule["card_id"]
+
         if not plausible:
+            qualitative.append(
+                {
+                    "card_id": rule["card_id"],
+                    "card_name": card_key,
+                    "rule_section": rule["section"],
+                    "rule_text": rule["text"][:500],
+                }
+            )
             continue
 
         best_rate = max(plausible)
-        card_key = f"{rule['bank_name']} {rule['card_name']}".strip() or rule["card_id"]
         candidate = {
             "card_id": rule["card_id"],
             "rate": best_rate,
@@ -151,14 +166,21 @@ def node_calculate_math(state: AgentState) -> dict:
         if card_key not in yields or candidate["rate"] > yields[card_key]["rate"]:
             yields[card_key] = candidate
 
-    return {"calculated_yields": yields}
+    return {"calculated_yields": yields, "qualitative_offers": qualitative}
 
 
 GENERATION_SYSTEM_PROMPT = """You are a credit-card rewards advisor. Using ONLY the
-pre-calculated yields and rule excerpts provided, recommend which owned card the user
-should use for this purchase. State the winning card, the expected reward, and a short
-justification quoting the relevant rule. Do not invent rates that are not in the data.
-If the yields are empty, say you could not find an applicable reward rule."""
+pre-calculated yields, qualitative offers, and rule excerpts provided, recommend which
+owned card the user should use for this purchase.
+
+- If `calculated_yields` has entries, state the winning card, the expected reward, and
+  a short justification quoting the relevant rule.
+- If `calculated_yields` is empty but `qualitative_offers` has entries, describe the
+  relevant offer(s) (e.g. flat discounts, Buy-One-Get-One deals, milestone benefits)
+  straight from the rule text — these are real benefits that just don't reduce to a
+  clean percentage rate, do not invent a rate or numeric reward for them.
+- Only say you could not find an applicable reward rule if BOTH are empty.
+- Never invent numbers that are not present in the data."""
 
 
 @observe(name="generate_response")
@@ -170,6 +192,7 @@ def node_generate_response(state: AgentState) -> dict:
             "merchant": state["extracted_merchant"],
             "amount": state["extracted_amount"],
             "calculated_yields": state["calculated_yields"],
+            "qualitative_offers": state.get("qualitative_offers", []),
         },
         indent=2,
     )

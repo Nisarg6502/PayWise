@@ -40,6 +40,7 @@ def _initial_state(query: str, user: User, db: Session) -> AgentState:
         "extracted_amount": 0.0,
         "retrieved_rules": [],
         "calculated_yields": {},
+        "qualitative_offers": [],
         "final_recommendation": "",
     }
 
@@ -55,6 +56,7 @@ def chat(
         "merchant": state["extracted_merchant"],
         "amount": state["extracted_amount"],
         "calculated_yields": state["calculated_yields"],
+        "qualitative_offers": state.get("qualitative_offers", []),
         "recommendation": state["final_recommendation"],
     }
 
