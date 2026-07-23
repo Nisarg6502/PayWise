@@ -80,17 +80,24 @@ export interface StreamEvent {
   update: Record<string, unknown>;
 }
 
+export interface ChatTurn {
+  role: "user" | "assistant";
+  content: string;
+}
+
 /**
  * Consume the SSE stream from GET /chat/stream with a Bearer token.
  * (EventSource can't send Authorization headers, so we parse SSE via fetch.)
  */
 export async function streamChat(
   query: string,
+  history: ChatTurn[],
   onEvent: (e: StreamEvent) => void
 ): Promise<void> {
   const token = getToken();
+  const historyParam = encodeURIComponent(JSON.stringify(history));
   const res = await fetch(
-    `${API_BASE}/chat/stream?query=${encodeURIComponent(query)}`,
+    `${API_BASE}/chat/stream?query=${encodeURIComponent(query)}&history=${historyParam}`,
     { headers: token ? { Authorization: `Bearer ${token}` } : {} }
   );
   if (!res.ok || !res.body) throw new Error(`Stream failed: ${res.status}`);

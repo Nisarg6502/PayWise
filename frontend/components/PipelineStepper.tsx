@@ -6,14 +6,37 @@ export interface StepDetail {
 }
 
 export type Phase = "idle" | "running" | "done" | "error";
+export type QueryType = "purchase" | "general" | "off_topic";
 
 export const STEP_LABELS = [
-  "Understanding your purchase",
+  "Understanding your question",
   "Reading your cards' reward rules",
   "Ranking the relevant rules",
   "Calculating your rewards",
   "Writing your recommendation",
 ];
+
+const STEP_LABELS_GENERAL = [
+  "Understanding your question",
+  "Gathering the right context",
+  "Ranking the relevant rules",
+  "Preparing your sources",
+  "Writing your answer",
+];
+
+const STEP_LABELS_OFF_TOPIC = [
+  "Understanding your question",
+  "Checking it's about your cards",
+  "Checking it's about your cards",
+  "Checking it's about your cards",
+  "Replying",
+];
+
+function labelsFor(queryType: QueryType | undefined): string[] {
+  if (queryType === "general") return STEP_LABELS_GENERAL;
+  if (queryType === "off_topic") return STEP_LABELS_OFF_TOPIC;
+  return STEP_LABELS;
+}
 
 interface Props {
   phase: Phase;
@@ -21,11 +44,13 @@ interface Props {
   errorStep: number;
   details: Record<number, StepDetail[]>;
   coldStart: boolean; // true when step 0 has been active for a while
+  queryType?: QueryType;
   onRetry: () => void;
 }
 
-export default function PipelineStepper({ phase, activeStep, errorStep, details, coldStart, onRetry }: Props) {
+export default function PipelineStepper({ phase, activeStep, errorStep, details, coldStart, queryType, onRetry }: Props) {
   if (phase === "idle") return null;
+  const labels = labelsFor(queryType);
 
   return (
     <div
@@ -34,7 +59,7 @@ export default function PipelineStepper({ phase, activeStep, errorStep, details,
       role="list"
       aria-label="AI pipeline progress"
     >
-      {STEP_LABELS.map((label, i) => {
+      {labels.map((label, i) => {
         let status: "pending" | "active" | "complete" | "error";
         if (phase === "error" && i === errorStep) status = "error";
         else if (phase === "error" && i > errorStep) status = "pending";
@@ -49,7 +74,7 @@ export default function PipelineStepper({ phase, activeStep, errorStep, details,
             : label;
 
         return (
-          <div className="step-row" key={label} role="listitem" aria-current={status === "active" ? "step" : undefined}>
+          <div className="step-row" key={i} role="listitem" aria-current={status === "active" ? "step" : undefined}>
             <div className={`step-dot ${status}`}>
               {status === "complete" ? "✓" : status === "active" ? <span /> : status === "error" ? "!" : ""}
             </div>

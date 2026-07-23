@@ -13,6 +13,13 @@ export interface Yield {
   rule_text: string;
 }
 
+export interface Citation {
+  card_id: string;
+  card_name: string;
+  section: string;
+  snippet: string;
+}
+
 export interface OwnedCard {
   id: string;
   bank_name: string;
@@ -20,18 +27,45 @@ export interface OwnedCard {
   network: string;
 }
 
+export type QueryType = "purchase" | "general" | "off_topic";
+
 interface Props {
   yields: Record<string, Yield>;
+  citations: Citation[];
+  queryType: QueryType;
   ownedCards: OwnedCard[];
   recommendation: string;
   onNewQuestion: () => void;
+  hideActions?: boolean;
 }
 
 function fmt(n: number): string {
   return n.toLocaleString("en-IN");
 }
 
-export default function AnswerPanel({ yields, ownedCards, recommendation, onNewQuestion }: Props) {
+function SourcesList({ citations }: { citations: Citation[] }) {
+  if (citations.length === 0) return null;
+  return (
+    <div style={{ marginTop: 18 }}>
+      <div className="eyebrow" style={{ marginBottom: 10 }}>Sources</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {citations.map((c, i) => (
+          <details key={`${c.card_id}-${i}`} className="panel" style={{ padding: "11px 14px" }}>
+            <summary style={{ fontSize: 12.5, color: "var(--muted)", cursor: "pointer", listStyle: "none" }}>
+              <span style={{ fontWeight: 600, color: "var(--text)" }}>{c.card_name}</span>
+              {c.section && <span style={{ color: "var(--faint)" }}> · {c.section}</span>}
+            </summary>
+            <div style={{ fontSize: 13, color: "var(--muted)", fontStyle: "italic", lineHeight: 1.5, marginTop: 8, paddingLeft: 11, borderLeft: "2px solid var(--border)" }}>
+              “{c.snippet}”
+            </div>
+          </details>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export default function AnswerPanel({ yields, citations, queryType, ownedCards, recommendation, onNewQuestion, hideActions }: Props) {
   const entries = Object.entries(yields).sort(
     ([, a], [, b]) => (b.estimated_reward ?? b.rate * 100) - (a.estimated_reward ?? a.rate * 100)
   );
@@ -71,20 +105,54 @@ export default function AnswerPanel({ yields, ownedCards, recommendation, onNewQ
       network: "",
     };
 
-  /* No applicable rules — graceful state */
+  /* Off-topic — plain text, no citations, no yield UI. */
+  if (queryType === "off_topic") {
+    return (
+      <div className="fade-up" style={{ marginTop: 26 }}>
+        <div className="panel" style={{ padding: 26 }}>
+          <div className="md" style={{ fontSize: 14.5, color: "var(--text)", lineHeight: 1.55 }}
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(recommendation) }} />
+        </div>
+        {!hideActions && (
+          <button className="btn-secondary" style={{ marginTop: 24 }} onClick={onNewQuestion}>＋ Ask a new question</button>
+        )}
+      </div>
+    );
+  }
+
+  /* General question — markdown answer + generalized citations, no winner-card UI. */
+  if (queryType === "general") {
+    return (
+      <div className="fade-up" style={{ marginTop: 26 }}>
+        <div className="panel" style={{ padding: 26 }}>
+          <div className="md" style={{ fontSize: 14.5, color: "var(--text)", lineHeight: 1.55 }}
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(recommendation) }} />
+          <SourcesList citations={citations} />
+        </div>
+        {!hideActions && (
+          <button className="btn-secondary" style={{ marginTop: 24 }} onClick={onNewQuestion}>＋ Ask a new question</button>
+        )}
+      </div>
+    );
+  }
+
+  /* Purchase, no computable yield — may still have a qualitative-offer answer. */
   if (entries.length === 0) {
     return (
       <div className="fade-up" style={{ marginTop: 26 }}>
         <div className="panel" style={{ padding: 26 }}>
           <div style={{ fontFamily: "var(--ff-num)", fontSize: 19, fontWeight: 600, marginBottom: 8 }}>
-            No reward rule matched this purchase
+            {recommendation ? "Here's what I found" : "No reward rule matched this purchase"}
           </div>
           {recommendation && (
             <div className="md" style={{ fontSize: 14.5, color: "var(--muted)", lineHeight: 1.55 }}
               dangerouslySetInnerHTML={{ __html: renderMarkdown(recommendation) }} />
           )}
+          <SourcesList citations={citations} />
         </div>
-        <button className="btn-secondary" style={{ marginTop: 24 }} onClick={onNewQuestion}>＋ Ask a new question</button>
+        {!hideActions && (
+          <button className="btn-secondary" style={{ marginTop: 24 }} onClick={onNewQuestion}>＋ Ask a new question</button>
+        )}
       </div>
     );
   }
@@ -205,9 +273,11 @@ export default function AnswerPanel({ yields, ownedCards, recommendation, onNewQ
         </div>
       )}
 
-      <button className="btn-secondary" style={{ marginTop: 24 }} onClick={onNewQuestion}>
-        ＋ Ask a new question
-      </button>
+      {!hideActions && (
+        <button className="btn-secondary" style={{ marginTop: 24 }} onClick={onNewQuestion}>
+          ＋ Ask a new question
+        </button>
+      )}
     </div>
   );
 }

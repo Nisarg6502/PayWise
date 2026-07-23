@@ -3,30 +3,42 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Nav from "@/components/Nav";
-import AnswerPanel, { OwnedCard, Yield } from "@/components/AnswerPanel";
+import AnswerPanel, { Citation, OwnedCard, QueryType, Yield } from "@/components/AnswerPanel";
 import PipelineStepper, { Phase, StepDetail } from "@/components/PipelineStepper";
 import { apiFetch, getToken, streamChat } from "@/lib/api";
+import { clearConversation, loadConversation, pushConversationTurn } from "@/lib/conversation";
 import { pushHistory } from "@/lib/history";
 
 interface UserInfo { id: string; email: string; name: string; }
 
+interface TurnState {
+  query: string;
+  queryType: QueryType;
+  yields: Record<string, Yield>;
+  citations: Citation[];
+  recommendation: string;
+}
+
 const NODE_INDEX: Record<string, number> = {
-  extract_intent: 0,
+  classify_and_extract: 0,
   retrieve_rules: 1,
+  retrieve_broad: 1,
   rerank: 2,
   calculate_math: 3,
+  build_citations: 3,
   generate_response: 4,
+  decline_off_topic: 4,
 };
 
 const EXAMPLES = [
   "₹2,500 dinner on Swiggy…",
-  "₹2,000 groceries on Blinkit…",
-  "Flight to Goa, ₹8,500…",
+  "What are my HDFC Infinia's benefits?…",
+  "How do I maximize rewards across my cards?…",
   "₹1,299 Amazon order…",
   "Fuel at HPCL, ₹3,000…",
 ];
 
-const QUICK_CHIPS = ["₹2,500 dinner on Swiggy", "₹8,500 flight to Goa", "₹2,000 Blinkit groceries"];
+const QUICK_CHIPS = ["₹2,500 dinner on Swiggy", "How do I maximize rewards across my cards?", "₹2,000 Blinkit groceries"];
 
 function greeting(): string {
   const h = new Date().getHours();
@@ -48,9 +60,10 @@ export default function DashboardPage() {
   const [errorStep, setErrorStep] = useState(-1);
   const [details, setDetails] = useState<Record<number, StepDetail[]>>({});
   const [coldStart, setColdStart] = useState(false);
-  const [yields, setYields] = useState<Record<string, Yield>>({});
-  const [recommendation, setRecommendation] = useState("");
+  const [liveQueryType, setLiveQueryType] = useState<QueryType | undefined>(undefined);
   const [banner, setBanner] = useState("");
+
+  const [turns, setTurns] = useState<TurnState[]>([]);
 
   const activeStepRef = useRef(-1);
   const lastQueryRef = useRef("");
@@ -90,43 +103,54 @@ export default function DashboardPage() {
     setStep(0);
     setErrorStep(-1);
     setDetails({});
-    setYields({});
-    setRecommendation("");
+    setLiveQueryType(undefined);
     setColdStart(false);
     const coldTimer = setTimeout(() => setColdStart(true), 8000);
 
     let gotAnswer = false;
     let finalYields: Record<string, Yield> = {};
+    let finalCitations: Citation[] = [];
     let finalRec = "";
+    let finalQueryType: QueryType = "purchase";
 
     try {
-      await streamChat(q, ({ node, update }) => {
+      const history = loadConversation();
+      await streamChat(q, history, ({ node, update }) => {
         const i = NODE_INDEX[node];
         if (i === undefined) return;
         const u = update as Record<string, unknown>;
 
-        if (node === "extract_intent") {
+        if (node === "classify_and_extract") {
           clearTimeout(coldTimer);
           setColdStart(false);
+          const qt = (u.query_type as QueryType) ?? "general";
+          finalQueryType = qt;
+          setLiveQueryType(qt);
           const merchant = String(u.extracted_merchant ?? "");
           const amount = Number(u.extracted_amount ?? 0);
           const chips: StepDetail[] = [];
-          if (merchant) chips.push({ text: merchant, kind: "accent" });
-          if (amount) chips.push({ text: `₹${amount.toLocaleString("en-IN")}`, kind: "accent" });
+          if (qt === "purchase" && merchant) chips.push({ text: merchant, kind: "accent" });
+          if (qt === "purchase" && amount) chips.push({ text: `₹${amount.toLocaleString("en-IN")}`, kind: "accent" });
           setDetails((d) => ({ ...d, 0: chips }));
         }
-        if (node === "retrieve_rules") {
+        if (node === "retrieve_rules" || node === "retrieve_broad") {
           const rules = (u.retrieved_rules as unknown[]) ?? [];
           setDetails((d) => ({ ...d, 1: [{ text: `${rules.length} rules found`, kind: "plain" }] }));
         }
         if (node === "calculate_math") {
           finalYields = (u.calculated_yields as Record<string, Yield>) ?? {};
-          setYields(finalYields);
           setDetails((d) => ({ ...d, 3: [{ text: "Deterministic — no AI guessing", kind: "reward" }] }));
         }
-        if (node === "generate_response") {
+        if (node === "build_citations") {
+          finalCitations = (u.citations as Citation[]) ?? [];
+          setDetails((d) => ({ ...d, 3: [{ text: `${finalCitations.length} source${finalCitations.length === 1 ? "" : "s"}`, kind: "plain" }] }));
+        }
+        if (node === "generate_response" || node === "decline_off_topic") {
           finalRec = String(u.final_recommendation ?? "");
-          setRecommendation(finalRec);
+          if (node === "decline_off_topic") {
+            finalCitations = (u.citations as Citation[]) ?? [];
+            finalYields = (u.calculated_yields as Record<string, Yield>) ?? {};
+          }
           gotAnswer = true;
         }
         setStep(i + 1);
@@ -135,20 +159,37 @@ export default function DashboardPage() {
       if (!gotAnswer) throw new Error("stream ended early");
       setPhase("done");
 
-      const entries = Object.entries(finalYields).sort(
-        ([, a], [, b]) => (b.estimated_reward ?? 0) - (a.estimated_reward ?? 0)
-      );
-      if (entries.length > 0) {
-        const [name, w] = entries[0];
-        pushHistory({
-          q,
-          winner: name,
-          bank: name.split(" ")[0] ?? "",
-          amount: w.estimated_reward,
-          rate: w.rate,
-          at: new Date().toISOString(),
-        });
+      setTurns((t) => [
+        ...t,
+        { query: q, queryType: finalQueryType, yields: finalYields, citations: finalCitations, recommendation: finalRec },
+      ]);
+      pushConversationTurn({ role: "user", content: q });
+      pushConversationTurn({ role: "assistant", content: finalRec });
+
+      if (finalQueryType === "purchase") {
+        const entries = Object.entries(finalYields).sort(
+          ([, a], [, b]) => (b.estimated_reward ?? 0) - (a.estimated_reward ?? 0)
+        );
+        if (entries.length > 0) {
+          const [name, w] = entries[0];
+          pushHistory({
+            q,
+            winner: name,
+            bank: name.split(" ")[0] ?? "",
+            amount: w.estimated_reward,
+            rate: w.rate,
+            at: new Date().toISOString(),
+          });
+        }
       }
+
+      // Turn is now archived in `turns` — clear the live/in-flight state and
+      // reset the ask bar for the next question in this conversation.
+      setQuery("");
+      setPhase("idle");
+      setStep(-1);
+      setDetails({});
+      setLiveQueryType(undefined);
     } catch {
       clearTimeout(coldTimer);
       setErrorStep(Math.max(0, activeStepRef.current));
@@ -156,13 +197,14 @@ export default function DashboardPage() {
     }
   }, [query, phase]);
 
-  const newQuestion = () => {
+  const startNewConversation = () => {
+    setTurns([]);
+    clearConversation();
     setPhase("idle");
     setQuery("");
     setStep(-1);
     setDetails({});
-    setYields({});
-    setRecommendation("");
+    setLiveQueryType(undefined);
   };
 
   const running = phase === "running";
@@ -176,7 +218,7 @@ export default function DashboardPage() {
           <div style={{ fontSize: 13, color: "var(--muted)" }}>
             {greeting()}{firstName ? `, ${firstName}` : ""}
           </div>
-          <h2 className="page-title">What are you buying?</h2>
+          <h2 className="page-title">{turns.length === 0 ? "What do you want to know?" : "Ask a follow-up"}</h2>
         </div>
 
         {/* ASK BAR */}
@@ -189,19 +231,24 @@ export default function DashboardPage() {
               onKeyDown={(e) => e.key === "Enter" && ask()}
               placeholder={EXAMPLES[phIndex]}
               disabled={running}
-              aria-label="Describe your purchase"
+              aria-label="Ask about your cards"
             />
             <button className={`ask-btn ${running ? "running" : ""}`} onClick={() => ask()} disabled={running || !query.trim()}>
               {running ? <span className="spinner" /> : <span>Ask →</span>}
             </button>
           </div>
-          {phase === "idle" && (
-            <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
-              {QUICK_CHIPS.map((c) => (
-                <button key={c} className="chip-btn" onClick={() => setQuery(c)}>{c}</button>
-              ))}
-            </div>
-          )}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 12, flexWrap: "wrap", gap: 8 }}>
+            {phase === "idle" && turns.length === 0 && (
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {QUICK_CHIPS.map((c) => (
+                  <button key={c} className="chip-btn" onClick={() => setQuery(c)}>{c}</button>
+                ))}
+              </div>
+            )}
+            {turns.length > 0 && (
+              <button className="chip-btn" onClick={startNewConversation}>↺ Start new conversation</button>
+            )}
+          </div>
         </div>
 
         {banner && (
@@ -215,7 +262,7 @@ export default function DashboardPage() {
         )}
 
         {/* No cards yet — nudge */}
-        {phase === "idle" && ownedCards.length === 0 && (
+        {phase === "idle" && turns.length === 0 && ownedCards.length === 0 && (
           <div className="panel fade-up" style={{ marginTop: 26, padding: "22px 24px", display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
             <div style={{ flex: 1, minWidth: 220 }}>
               <div style={{ fontWeight: 600, marginBottom: 4 }}>Add your cards first</div>
@@ -225,22 +272,44 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <PipelineStepper
-          phase={phase}
-          activeStep={activeStep}
-          errorStep={errorStep}
-          details={details}
-          coldStart={coldStart}
-          onRetry={() => ask(lastQueryRef.current)}
-        />
+        {/* Completed turns — a running transcript */}
+        {turns.map((t, idx) => (
+          <div key={idx} style={{ marginTop: 26 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 10 }}>
+              <span style={{ fontSize: 13, color: "var(--faint)" }}>You asked</span>
+              <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+            </div>
+            <div className="panel" style={{ padding: "13px 18px", fontSize: 14.5 }}>{t.query}</div>
+            <AnswerPanel
+              yields={t.yields}
+              citations={t.citations}
+              queryType={t.queryType}
+              ownedCards={ownedCards}
+              recommendation={t.recommendation}
+              onNewQuestion={() => {}}
+              hideActions
+            />
+          </div>
+        ))}
 
-        {phase === "done" && (
-          <AnswerPanel
-            yields={yields}
-            ownedCards={ownedCards}
-            recommendation={recommendation}
-            onNewQuestion={newQuestion}
-          />
+        {/* Currently in-flight question */}
+        {(phase === "running" || phase === "error") && (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 26, marginBottom: 10 }}>
+              <span style={{ fontSize: 13, color: "var(--faint)" }}>You asked</span>
+              <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+            </div>
+            <div className="panel" style={{ padding: "13px 18px", fontSize: 14.5 }}>{lastQueryRef.current}</div>
+            <PipelineStepper
+              phase={phase}
+              activeStep={activeStep}
+              errorStep={errorStep}
+              details={details}
+              coldStart={coldStart}
+              queryType={liveQueryType}
+              onRetry={() => ask(lastQueryRef.current)}
+            />
+          </>
         )}
       </section>
     </div>
