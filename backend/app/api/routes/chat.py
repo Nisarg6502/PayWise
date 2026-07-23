@@ -57,6 +57,7 @@ def _initial_state(query: str, history: list[dict], user: User, db: Session) -> 
         "qualitative_offers": [],
         "citations": [],
         "final_recommendation": "",
+        "follow_up_questions": [],
     }
 
 
@@ -76,6 +77,7 @@ def chat(
         "qualitative_offers": state.get("qualitative_offers", []),
         "citations": state.get("citations", []),
         "recommendation": state["final_recommendation"],
+        "follow_up_questions": state.get("follow_up_questions", []),
     }
 
 

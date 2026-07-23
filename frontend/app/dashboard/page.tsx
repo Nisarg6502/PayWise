@@ -17,6 +17,12 @@ interface TurnState {
   yields: Record<string, Yield>;
   citations: Citation[];
   recommendation: string;
+  followUps: string[];
+  at: string;
+}
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
 const NODE_INDEX: Record<string, number> = {
@@ -67,6 +73,7 @@ export default function DashboardPage() {
 
   const activeStepRef = useRef(-1);
   const lastQueryRef = useRef("");
+  const lastQueryAtRef = useRef("");
 
   useEffect(() => {
     if (!getToken()) {
@@ -98,6 +105,7 @@ export default function DashboardPage() {
     const q = (queryOverride ?? query).trim();
     if (!q || phase === "running") return;
     lastQueryRef.current = q;
+    lastQueryAtRef.current = new Date().toISOString();
     setBanner("");
     setPhase("running");
     setStep(0);
@@ -111,6 +119,7 @@ export default function DashboardPage() {
     let finalYields: Record<string, Yield> = {};
     let finalCitations: Citation[] = [];
     let finalRec = "";
+    let finalFollowUps: string[] = [];
     let finalQueryType: QueryType = "purchase";
 
     try {
@@ -147,6 +156,7 @@ export default function DashboardPage() {
         }
         if (node === "generate_response" || node === "decline_off_topic") {
           finalRec = String(u.final_recommendation ?? "");
+          finalFollowUps = (u.follow_up_questions as string[]) ?? [];
           if (node === "decline_off_topic") {
             finalCitations = (u.citations as Citation[]) ?? [];
             finalYields = (u.calculated_yields as Record<string, Yield>) ?? {};
@@ -161,7 +171,15 @@ export default function DashboardPage() {
 
       setTurns((t) => [
         ...t,
-        { query: q, queryType: finalQueryType, yields: finalYields, citations: finalCitations, recommendation: finalRec },
+        {
+          query: q,
+          queryType: finalQueryType,
+          yields: finalYields,
+          citations: finalCitations,
+          recommendation: finalRec,
+          followUps: finalFollowUps,
+          at: lastQueryAtRef.current,
+        },
       ]);
       pushConversationTurn({ role: "user", content: q });
       pushConversationTurn({ role: "assistant", content: finalRec });
@@ -273,42 +291,58 @@ export default function DashboardPage() {
         )}
 
         {/* Completed turns — a running transcript */}
-        {turns.map((t, idx) => (
-          <div key={idx} style={{ marginTop: 26 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 10 }}>
-              <span style={{ fontSize: 13, color: "var(--faint)" }}>You asked</span>
-              <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+        {turns.map((t, idx) => {
+          const isLast = idx === turns.length - 1 && phase !== "running";
+          return (
+            <div key={idx}>
+              <div className="chat-row user">
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", maxWidth: "78%" }}>
+                  <div className="bubble-user">{t.query}</div>
+                  <span className="msg-time">{formatTime(t.at)}</span>
+                </div>
+              </div>
+              <div className="chat-row assistant">
+                <div style={{ maxWidth: "92%", width: "100%" }}>
+                  <AnswerPanel
+                    yields={t.yields}
+                    citations={t.citations}
+                    queryType={t.queryType}
+                    ownedCards={ownedCards}
+                    recommendation={t.recommendation}
+                    onNewQuestion={() => {}}
+                    hideActions
+                    followUps={isLast ? t.followUps : undefined}
+                    onFollowUp={isLast ? (q) => ask(q) : undefined}
+                  />
+                  <span className="msg-time">{formatTime(t.at)}</span>
+                </div>
+              </div>
             </div>
-            <div className="panel" style={{ padding: "13px 18px", fontSize: 14.5 }}>{t.query}</div>
-            <AnswerPanel
-              yields={t.yields}
-              citations={t.citations}
-              queryType={t.queryType}
-              ownedCards={ownedCards}
-              recommendation={t.recommendation}
-              onNewQuestion={() => {}}
-              hideActions
-            />
-          </div>
-        ))}
+          );
+        })}
 
         {/* Currently in-flight question */}
         {(phase === "running" || phase === "error") && (
           <>
-            <div style={{ display: "flex", alignItems: "center", gap: 9, marginTop: 26, marginBottom: 10 }}>
-              <span style={{ fontSize: 13, color: "var(--faint)" }}>You asked</span>
-              <div style={{ flex: 1, height: 1, background: "var(--border)" }} />
+            <div className="chat-row user">
+              <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", maxWidth: "78%" }}>
+                <div className="bubble-user">{lastQueryRef.current}</div>
+                <span className="msg-time">{formatTime(lastQueryAtRef.current)}</span>
+              </div>
             </div>
-            <div className="panel" style={{ padding: "13px 18px", fontSize: 14.5 }}>{lastQueryRef.current}</div>
-            <PipelineStepper
-              phase={phase}
-              activeStep={activeStep}
-              errorStep={errorStep}
-              details={details}
-              coldStart={coldStart}
-              queryType={liveQueryType}
-              onRetry={() => ask(lastQueryRef.current)}
-            />
+            <div className="chat-row assistant">
+              <div style={{ maxWidth: "92%", width: "100%" }}>
+                <PipelineStepper
+                  phase={phase}
+                  activeStep={activeStep}
+                  errorStep={errorStep}
+                  details={details}
+                  coldStart={coldStart}
+                  queryType={liveQueryType}
+                  onRetry={() => ask(lastQueryRef.current)}
+                />
+              </div>
+            </div>
           </>
         )}
       </section>

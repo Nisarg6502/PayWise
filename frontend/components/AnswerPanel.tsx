@@ -37,40 +37,47 @@ interface Props {
   recommendation: string;
   onNewQuestion: () => void;
   hideActions?: boolean;
+  followUps?: string[];
+  onFollowUp?: (q: string) => void;
 }
 
 function fmt(n: number): string {
   return n.toLocaleString("en-IN");
 }
 
-function SourcesList({ citations }: { citations: Citation[] }) {
-  if (citations.length === 0) return null;
+/** Single citation preview, shown only when its inline [n] badge is clicked. */
+function CiteCallout({ citation }: { citation: Citation }) {
   return (
-    <div style={{ marginTop: 18 }}>
-      <div className="eyebrow" style={{ marginBottom: 10 }}>Sources</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {citations.map((c, i) => (
-          <details key={`${c.card_id}-${i}`} className="panel" style={{ padding: "11px 14px" }}>
-            <summary style={{ fontSize: 12.5, color: "var(--muted)", cursor: "pointer", listStyle: "none" }}>
-              <span style={{ fontWeight: 600, color: "var(--text)" }}>{c.card_name}</span>
-              {c.section && <span style={{ color: "var(--faint)" }}> · {c.section}</span>}
-            </summary>
-            <div style={{ fontSize: 13, color: "var(--muted)", fontStyle: "italic", lineHeight: 1.5, marginTop: 8, paddingLeft: 11, borderLeft: "2px solid var(--border)" }}>
-              “{c.snippet}”
-            </div>
-          </details>
-        ))}
+    <div className="panel" style={{ marginTop: 10, padding: "11px 14px" }}>
+      <div style={{ fontSize: 12.5, marginBottom: 6 }}>
+        <span style={{ fontWeight: 600, color: "var(--text)" }}>{citation.card_name}</span>
+        {citation.section && <span style={{ color: "var(--faint)" }}> · {citation.section}</span>}
+      </div>
+      <div style={{ fontSize: 13, color: "var(--muted)", fontStyle: "italic", lineHeight: 1.5, paddingLeft: 11, borderLeft: "2px solid var(--border)" }}>
+        “{citation.snippet}”
       </div>
     </div>
   );
 }
 
-export default function AnswerPanel({ yields, citations, queryType, ownedCards, recommendation, onNewQuestion, hideActions }: Props) {
+function FollowUpChips({ items, onPick }: { items: string[]; onPick: (q: string) => void }) {
+  if (items.length === 0) return null;
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 14 }}>
+      {items.map((q) => (
+        <button key={q} className="chip-btn followup-chip" onClick={() => onPick(q)}>{q}</button>
+      ))}
+    </div>
+  );
+}
+
+export default function AnswerPanel({ yields, citations, queryType, ownedCards, recommendation, onNewQuestion, hideActions, followUps, onFollowUp }: Props) {
   const entries = Object.entries(yields).sort(
     ([, a], [, b]) => (b.estimated_reward ?? b.rate * 100) - (a.estimated_reward ?? a.rate * 100)
   );
   const [countUp, setCountUp] = useState(0);
   const [revealBars, setRevealBars] = useState(false);
+  const [expandedCite, setExpandedCite] = useState<number | null>(null);
   const raf = useRef<number>();
 
   const winner = entries[0];
@@ -105,6 +112,20 @@ export default function AnswerPanel({ yields, citations, queryType, ownedCards, 
       network: "",
     };
 
+  /** Clicking a [n] badge toggles its citation preview; clicking elsewhere is a no-op. */
+  const onAnswerClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const badge = (e.target as HTMLElement).closest<HTMLElement>(".cite-badge");
+    if (!badge) return;
+    const idx = Number(badge.dataset.cite);
+    setExpandedCite((cur) => (cur === idx ? null : idx));
+  };
+
+  const citeCallout =
+    expandedCite !== null && citations[expandedCite] ? <CiteCallout citation={citations[expandedCite]} /> : null;
+
+  const followUpChips =
+    followUps && followUps.length > 0 && onFollowUp ? <FollowUpChips items={followUps} onPick={onFollowUp} /> : null;
+
   /* Off-topic — plain text, no citations, no yield UI. */
   if (queryType === "off_topic") {
     return (
@@ -112,6 +133,7 @@ export default function AnswerPanel({ yields, citations, queryType, ownedCards, 
         <div className="panel" style={{ padding: 26 }}>
           <div className="md" style={{ fontSize: 14.5, color: "var(--text)", lineHeight: 1.55 }}
             dangerouslySetInnerHTML={{ __html: renderMarkdown(recommendation) }} />
+          {followUpChips}
         </div>
         {!hideActions && (
           <button className="btn-secondary" style={{ marginTop: 24 }} onClick={onNewQuestion}>＋ Ask a new question</button>
@@ -120,14 +142,16 @@ export default function AnswerPanel({ yields, citations, queryType, ownedCards, 
     );
   }
 
-  /* General question — markdown answer + generalized citations, no winner-card UI. */
+  /* General question — markdown answer + inline citation badges, no winner-card UI. */
   if (queryType === "general") {
     return (
       <div className="fade-up" style={{ marginTop: 26 }}>
         <div className="panel" style={{ padding: 26 }}>
           <div className="md" style={{ fontSize: 14.5, color: "var(--text)", lineHeight: 1.55 }}
-            dangerouslySetInnerHTML={{ __html: renderMarkdown(recommendation) }} />
-          <SourcesList citations={citations} />
+            onClick={onAnswerClick}
+            dangerouslySetInnerHTML={{ __html: renderMarkdown(recommendation, citations.length) }} />
+          {citeCallout}
+          {followUpChips}
         </div>
         {!hideActions && (
           <button className="btn-secondary" style={{ marginTop: 24 }} onClick={onNewQuestion}>＋ Ask a new question</button>
@@ -146,9 +170,11 @@ export default function AnswerPanel({ yields, citations, queryType, ownedCards, 
           </div>
           {recommendation && (
             <div className="md" style={{ fontSize: 14.5, color: "var(--muted)", lineHeight: 1.55 }}
-              dangerouslySetInnerHTML={{ __html: renderMarkdown(recommendation) }} />
+              onClick={onAnswerClick}
+              dangerouslySetInnerHTML={{ __html: renderMarkdown(recommendation, citations.length) }} />
           )}
-          <SourcesList citations={citations} />
+          {citeCallout}
+          {followUpChips}
         </div>
         {!hideActions && (
           <button className="btn-secondary" style={{ marginTop: 24 }} onClick={onNewQuestion}>＋ Ask a new question</button>
@@ -214,7 +240,8 @@ export default function AnswerPanel({ yields, citations, queryType, ownedCards, 
             </div>
             {recommendation && (
               <div className="md" style={{ fontSize: 14.5, color: "var(--text)", lineHeight: 1.5 }}
-                dangerouslySetInnerHTML={{ __html: renderMarkdown(recommendation) }} />
+                onClick={onAnswerClick}
+                dangerouslySetInnerHTML={{ __html: renderMarkdown(recommendation, citations.length) }} />
             )}
           </div>
         </div>
@@ -227,6 +254,7 @@ export default function AnswerPanel({ yields, citations, queryType, ownedCards, 
           </div>
         </div>
       </div>
+      {citeCallout}
 
       {/* COMPARISON */}
       {runners.length > 0 && (
@@ -272,6 +300,8 @@ export default function AnswerPanel({ yields, citations, queryType, ownedCards, 
           </div>
         </div>
       )}
+
+      {followUpChips}
 
       {!hideActions && (
         <button className="btn-secondary" style={{ marginTop: 24 }} onClick={onNewQuestion}>
