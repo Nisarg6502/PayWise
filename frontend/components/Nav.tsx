@@ -8,6 +8,7 @@ const TABS = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/cards", label: "My Cards" },
   { href: "/analytics", label: "Analytics" },
+  { href: "/how-it-works", label: "How it works" },
 ];
 
 export default function Nav({ email }: { email?: string }) {

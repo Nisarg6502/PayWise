@@ -24,6 +24,8 @@ export default function LandingPage() {
           <div className="brand-mark"><div /></div>
           <span className="brand-name">PayWise<span style={{ color: "var(--accent)" }}>.</span></span>
         </div>
+        <div style={{ flex: 1 }} />
+        <a href="/how-it-works" className="nav-tab">How it works</a>
       </nav>
 
       <section style={{ maxWidth: 1180, margin: "0 auto", padding: "0 24px" }}>
