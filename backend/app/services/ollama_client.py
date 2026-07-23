@@ -49,12 +49,21 @@ def _strip_thinking(text: str) -> str:
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
-def chat(system: str, user: str, temperature: float = 0.1) -> str:
-    """Single-turn chat completion via the configured provider."""
-    messages = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user},
-    ]
+def chat(
+    system: str,
+    user: str | None = None,
+    messages: list[dict] | None = None,
+    temperature: float = 0.1,
+) -> str:
+    """Chat completion via the configured provider.
+
+    Either pass `user` (single-turn) or `messages` (a full history list,
+    the last entry being the current turn) — `messages` takes precedence
+    if both are given.
+    """
+    if messages is None:
+        messages = [{"role": "user", "content": user or ""}]
+    messages = [{"role": "system", "content": system}] + messages
     if settings.llm_provider == "hf":
         return _strip_thinking(_hf_chat(messages, temperature))
     response = get_ollama().chat(

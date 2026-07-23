@@ -16,31 +16,46 @@ from sse_starlette.sse import EventSourceResponse
 from app.agent.graph import AgentState, run_agent, stream_agent
 from app.auth.dependencies import get_current_user
 from app.db.session import get_db
-from app.models import User, UserCardMapping
+from app.models import CreditCard, User, UserCardMapping
 
 router = APIRouter(prefix="/chat", tags=["chat"])
+
+MAX_HISTORY_TURNS = 6
+
+
+class ChatTurnIn(BaseModel):
+    role: str
+    content: str
 
 
 class ChatRequest(BaseModel):
     query: str
+    history: list[ChatTurnIn] = []
 
 
-def _initial_state(query: str, user: User, db: Session) -> AgentState:
-    owned_card_ids = [
-        str(card_id)
-        for card_id in db.scalars(
-            select(UserCardMapping.card_id).where(UserCardMapping.user_id == user.id)
-        )
-    ]
+def _initial_state(query: str, history: list[dict], user: User, db: Session) -> AgentState:
+    owned_rows = db.execute(
+        select(CreditCard.id, CreditCard.bank_name, CreditCard.card_name)
+        .join(UserCardMapping, UserCardMapping.card_id == CreditCard.id)
+        .where(UserCardMapping.user_id == user.id)
+    ).all()
+    owned_card_ids = [str(r.id) for r in owned_rows]
+    owned_cards = [{"id": str(r.id), "bank_name": r.bank_name, "card_name": r.card_name} for r in owned_rows]
+
     return {
         "query": query,
         "user_id": str(user.id),
         "owned_card_ids": owned_card_ids,
+        "owned_cards": owned_cards,
+        "history": [{"role": h["role"], "content": h["content"]} for h in history][-MAX_HISTORY_TURNS:],
+        "query_type": "",
+        "named_card_hint": "",
         "extracted_merchant": "",
         "extracted_amount": 0.0,
         "retrieved_rules": [],
         "calculated_yields": {},
         "qualitative_offers": [],
+        "citations": [],
         "final_recommendation": "",
     }
 
@@ -51,12 +66,15 @@ def chat(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    state = run_agent(_initial_state(body.query, current_user, db), user_id=str(current_user.id))
+    history = [{"role": h.role, "content": h.content} for h in body.history]
+    state = run_agent(_initial_state(body.query, history, current_user, db), user_id=str(current_user.id))
     return {
+        "query_type": state["query_type"],
         "merchant": state["extracted_merchant"],
         "amount": state["extracted_amount"],
         "calculated_yields": state["calculated_yields"],
         "qualitative_offers": state.get("qualitative_offers", []),
+        "citations": state.get("citations", []),
         "recommendation": state["final_recommendation"],
     }
 
@@ -64,10 +82,18 @@ def chat(
 @router.get("/stream")
 async def chat_stream(
     query: str = Query(..., min_length=1),
+    history: str = Query("[]"),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    initial = _initial_state(query, current_user, db)
+    try:
+        history_turns = json.loads(history)
+        if not isinstance(history_turns, list):
+            history_turns = []
+    except json.JSONDecodeError:
+        history_turns = []
+
+    initial = _initial_state(query, history_turns, current_user, db)
 
     def event_generator():
         # stream_mode="updates" yields {node_name: state_delta} per node

@@ -5,8 +5,9 @@
     "expected_merchant_keyword": "swiggy",
     "expected_amount": 450,
     "expected_card": "HDFC Swiggy Card",
-    "expected_rate": 0.10,
-    "note": "Swiggy Spends section (10%) should beat Axis Ace's Food Delivery (4%)."
+    "expected_rate": 0.1,
+    "note": "Swiggy Spends section (10%) should beat Axis Ace's Food Delivery (4%).",
+    "expected_query_type": "purchase"
   },
   {
     "id": "swiggy-instamart-1",
@@ -14,8 +15,9 @@
     "expected_merchant_keyword": "groceries",
     "expected_amount": 1200,
     "expected_card": "HDFC Swiggy Card",
-    "expected_rate": 0.10,
-    "note": "Swiggy Spends explicitly covers Instamart."
+    "expected_rate": 0.1,
+    "note": "Swiggy Spends explicitly covers Instamart.",
+    "expected_query_type": "purchase"
   },
   {
     "id": "swiggy-genie-1",
@@ -23,8 +25,9 @@
     "expected_merchant_keyword": "swiggy",
     "expected_amount": 300,
     "expected_card": "HDFC Swiggy Card",
-    "expected_rate": 0.10,
-    "note": "Swiggy Spends explicitly covers Genie."
+    "expected_rate": 0.1,
+    "note": "Swiggy Spends explicitly covers Genie.",
+    "expected_query_type": "purchase"
   },
   {
     "id": "gpay-bill-1",
@@ -33,7 +36,8 @@
     "expected_amount": 599,
     "expected_card": "Axis Ace",
     "expected_rate": 0.05,
-    "note": "Axis Ace's Bill Payments and Recharges (5% via Google Pay) is the only matching rule."
+    "note": "Axis Ace's Bill Payments and Recharges (5% via Google Pay) is the only matching rule.",
+    "expected_query_type": "purchase"
   },
   {
     "id": "gpay-dth-1",
@@ -42,7 +46,8 @@
     "expected_amount": 350,
     "expected_card": "Axis Ace",
     "expected_rate": 0.05,
-    "note": "DTH recharge via Google Pay is explicitly named in Axis Ace's rule."
+    "note": "DTH recharge via Google Pay is explicitly named in Axis Ace's rule.",
+    "expected_query_type": "purchase"
   },
   {
     "id": "gpay-recharge-1",
@@ -51,7 +56,8 @@
     "expected_amount": 199,
     "expected_card": "Axis Ace",
     "expected_rate": 0.05,
-    "note": "Mobile recharge via Google Pay is explicitly named."
+    "note": "Mobile recharge via Google Pay is explicitly named.",
+    "expected_query_type": "purchase"
   },
   {
     "id": "ola-cab-1",
@@ -60,7 +66,8 @@
     "expected_amount": 680,
     "expected_card": "Axis Ace",
     "expected_rate": 0.04,
-    "note": "Ola is explicitly named in Axis Ace's Food Delivery and Cabs section (4%)."
+    "note": "Ola is explicitly named in Axis Ace's Food Delivery and Cabs section (4%).",
+    "expected_query_type": "purchase"
   },
   {
     "id": "ola-cab-2",
@@ -69,7 +76,8 @@
     "expected_amount": 450,
     "expected_card": "Axis Ace",
     "expected_rate": 0.04,
-    "note": "Same rule as ola-cab-1, different amount."
+    "note": "Same rule as ola-cab-1, different amount.",
+    "expected_query_type": "purchase"
   },
   {
     "id": "fuel-1",
@@ -78,7 +86,8 @@
     "expected_amount": 1500,
     "expected_card": "HDFC Infinia",
     "expected_rate": 0.05,
-    "note": "HDFC Infinia's only fuel rule. NOTE: the Rs 250/cycle cap is not enforced by calculate_math (known limitation) -- 1500*5%=75 stays under the cap anyway, so this case doesn't expose it."
+    "note": "HDFC Infinia's only fuel rule. NOTE: the Rs 250/cycle cap is not enforced by calculate_math (known limitation) -- 1500*5%=75 stays under the cap anyway, so this case doesn't expose it.",
+    "expected_query_type": "purchase"
   },
   {
     "id": "fuel-2",
@@ -87,7 +96,8 @@
     "expected_amount": 800,
     "expected_card": "HDFC Infinia",
     "expected_rate": 0.05,
-    "note": "Same rule as fuel-1, different amount."
+    "note": "Same rule as fuel-1, different amount.",
+    "expected_query_type": "purchase"
   },
   {
     "id": "online-generic-1",
@@ -96,7 +106,8 @@
     "expected_amount": 600,
     "expected_card": "HDFC Swiggy Card",
     "expected_rate": 0.05,
-    "note": "Generic online spend -> HDFC Swiggy Card's Online Spends (5%) should win over Axis Ace's All Other Spends (2%)."
+    "note": "Generic online spend -> HDFC Swiggy Card's Online Spends (5%) should win over Axis Ace's All Other Spends (2%).",
+    "expected_query_type": "purchase"
   },
   {
     "id": "online-generic-2",
@@ -105,7 +116,8 @@
     "expected_amount": 5000,
     "expected_card": "HDFC Swiggy Card",
     "expected_rate": 0.05,
-    "note": "Same reasoning as online-generic-1."
+    "note": "Same reasoning as online-generic-1.",
+    "expected_query_type": "purchase"
   },
   {
     "id": "offline-generic-1",
@@ -114,7 +126,8 @@
     "expected_amount": 1000,
     "expected_card": "Axis Ace",
     "expected_rate": 0.02,
-    "note": "TRICKY CASE: offline generic spend. Axis Ace's All Other Spends (2%) is broader than HDFC's card-specific 1% 'Other Spends' rules, so Axis should win -- but this depends on the reranker correctly surfacing Axis's chunk for an offline-flavored query. A miss here is a legitimate, useful finding, not a bug in the eval."
+    "note": "TRICKY CASE: offline generic spend. Axis Ace's All Other Spends (2%) is broader than HDFC's card-specific 1% 'Other Spends' rules, so Axis should win -- but this depends on the reranker correctly surfacing Axis's chunk for an offline-flavored query. A miss here is a legitimate, useful finding, not a bug in the eval.",
+    "expected_query_type": "purchase"
   },
   {
     "id": "zomato-1",
@@ -123,7 +136,8 @@
     "expected_amount": 500,
     "expected_card": "Axis Ace",
     "expected_rate": 0.04,
-    "note": "TRICKY CASE: Zomato is named explicitly only in Axis Ace's Food Delivery rule (4%), but HDFC Swiggy Card's generic Online Spends rule (5%) doesn't exclude food delivery and could plausibly outrank it. Included specifically to surface this ambiguity."
+    "note": "TRICKY CASE: Zomato is named explicitly only in Axis Ace's Food Delivery rule (4%), but HDFC Swiggy Card's generic Online Spends rule (5%) doesn't exclude food delivery and could plausibly outrank it. Included specifically to surface this ambiguity.",
+    "expected_query_type": "purchase"
   },
   {
     "id": "swiggy-dineout-1",
@@ -131,7 +145,32 @@
     "expected_merchant_keyword": "restaurant",
     "expected_amount": 2000,
     "expected_card": "HDFC Swiggy Card",
-    "expected_rate": 0.10,
-    "note": "Dineout is explicitly named in Swiggy Spends."
+    "expected_rate": 0.1,
+    "note": "Dineout is explicitly named in Swiggy Spends.",
+    "expected_query_type": "purchase"
+  },
+  {
+    "id": "general-benefits-1",
+    "query": "What are the benefits of my HDFC Swiggy Card?",
+    "expected_query_type": "general",
+    "note": "Named-card general question -- should narrow retrieval to that card and ground the answer in real benefit text."
+  },
+  {
+    "id": "general-maximize-1",
+    "query": "How do I maximize rewards across all my cards?",
+    "expected_query_type": "general",
+    "note": "Cross-card synthesis question -- no single winner expected, citations may span multiple owned cards."
+  },
+  {
+    "id": "off-topic-weather-1",
+    "query": "What's the weather like today?",
+    "expected_query_type": "off_topic",
+    "note": "Unrelated to cards/rewards -- should decline gracefully, not hallucinate."
+  },
+  {
+    "id": "off-topic-coding-1",
+    "query": "Can you help me write a Python script to sort a list?",
+    "expected_query_type": "off_topic",
+    "note": "Off-topic even though it is a reasonable question in general -- out of this assistant's scope."
   }
 ]
